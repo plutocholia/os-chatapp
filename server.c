@@ -28,6 +28,7 @@ typedef struct{
     char  name[NAME_LEN];
     int   online;
     int   port;
+    int   user_count;
 } Group;
 
 typedef struct{
@@ -108,7 +109,7 @@ User* users_return(int port){
     return &(users[users_find_index(port)]);
 }
 
-void users_delete(User *user){
+void users_delete(User* user){
     // *user = {0};
     memset(user, 0, sizeof(User));
 }
@@ -116,11 +117,15 @@ void users_delete(User *user){
 
 // -------------------------- GRAOUP Stuff ------------------------------
 
-// Group* group_return(char* name){
-//     int i;
-//     for(i = 0; i < )
-// }
-
+Group* group_return_by_name(char* name){
+    int i;
+    for(i = 0; i < MAX_GROUP_LEN; i++){
+        if(strcmp(name, groups[i].name) == 0){
+            return &groups[i];
+        }
+    }
+    return NULL;
+}
 
 void create_groups_file(){
     int fd;
@@ -193,8 +198,25 @@ void do_request(Request* request, int fd_client){
         Group new_gp;
         strcpy(new_gp.name, request->info);
         new_gp.online = false;
+        new_gp.port = 10003 + gps_count;
+        new_gp.user_count = 0;
         groups[gps_count++] = new_gp;
-        print("* "); print(request->info); print(" is added to gps"); print("\n");
+        print("* "); print(request->info); print(" is added to gps on port "); print(itoa(new_gp.port, 10)); print("\n");
+    }
+    if(request->state == _C_W_GP_CHAT){
+        Group* the_gp = group_return_by_name(request->info);
+        if(the_gp == NULL){
+            Response response;
+            response.state = _S_GP_404;
+            strcpy(response.info, "No such group!");
+            send_response(&response, fd_client);
+        }
+        else{
+            Response response;
+            response.state = _S_GP_PORT;
+            strcpy(response.info, itoa(the_gp->port, 10));
+            send_response(&response, fd_client);
+        }
     }
 
     if(request->state == _C_W_GPS_NAME){
@@ -364,6 +386,7 @@ void run_server(int server_port){
 
                     user->online = false;
                     user->busy   = false;
+                    users_delete(user);
                     FD_CLR(fd_client, &fds_set);
 
                     close(fd_client);
@@ -383,23 +406,13 @@ void run_server(int server_port){
 }
 
 void test(){
-    // char *msg = "shit";
-    // printf("%d\n", char_to_state(msg));
-    // users_init(9002);
-    // users_init(2000);
-    // users_init(91);
-    // users_init(124);
-    // User* user = users_return(91);
-    // User* user2 = users_return(9002);
-    // strcpy(user2->name, "ali ghanbari");
-    // strcpy(user->name, "kiarash norouzi");
-    // if(users_return_by_name("kiara norouzi") != NULL)
-    //     print("YAAA");
-    char message[INFO_LEN];
+    char from[NAME_LEN];
     char to[NAME_LEN];
-    char* info = "kiarash&nourzi";
-    parse_chat_info(info, message, to);
-    print(to);print("\n");print(message);
+    char message[INFO_LEN];
+
+    char* info = "kiarash&nourzi&goffy shit";
+    parse_info(info, from, to, message);
+    print(from); print("\n"); print(to);print("\n");print(message);
 }
 
 int main(int argc, char* argv[]){

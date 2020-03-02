@@ -26,7 +26,8 @@ typedef enum{
     U_ENTER_NAME,
     U_PV_CHAT,
     U_SHOW_OPTIONS,
-    U_WAITING
+    U_WAITING,
+    U_GP_CHAT
 } MyState;
 
 void parse_response(char *msg, Response* response){
@@ -58,8 +59,72 @@ void parse_response(char *msg, Response* response){
 
 char buffer_out[BUFSIZE];
 char buffer_in[BUFSIZE];
+char my_name[NAME_LEN];
 char pv_chat_name[NAME_LEN];
+char gp_chat_name[NAME_LEN];
 MyState myState;
+
+void run_gp_chat(int port){
+    int fd_gp = create_udp_socketFD();
+    struct sockaddr_in address_bc = create_broadcast_address(port);
+    struct sockaddr_in address    = create_address(port);
+    set_broadcast_options(fd_gp);
+    bind_address_to_socket(&fd_gp, &address_bc);
+
+    int len_bc_addr = sizeof(address_bc);
+
+    fd_set fds_set;
+    int _max_fd = fd_gp;
+
+    while(true){
+        FD_ZERO(&fds_set);
+        FD_SET(fd_gp, &fds_set);
+        FD_SET(0, &fds_set);
+        
+        if(((select(_max_fd + 1, &fds_set, NULL, NULL, NULL)) < 0) && (errno!=EINTR))
+        { perror("# ERROR in selecting");}
+
+        if(FD_ISSET(fd_gp, &fds_set)){
+            int read_size;
+            if((read_size = recvfrom(fd_gp, buffer_in, sizeof(buffer_in), MSG_WAITALL,
+                            (struct sockaddr*)&address, &len_bc_addr)) <= 0){ 
+                print("\nDAMN SON!\n");
+            }
+            else{   // ----------------------------------SERVER RESPONSES -------------
+                buffer_in[read_size] = '\0';
+
+                char name[NAME_LEN];
+                char message[INFO_LEN];
+                parse_chat_info(buffer_in, message, name);
+                if(strcmp(name, my_name) != 0){
+                    print(name); print(" : "); print(message); print("\n");
+                }
+               
+            }
+        }
+
+        if(FD_ISSET(0, &fds_set)){ // -------------------------- STDIN TO SERVER ------
+            memset(buffer_in, '\0', sizeof(buffer_in));
+            read(0, buffer_in, BUFSIZE);
+            if(buffer_in[strlen(buffer_in)-1] == '\n')
+                buffer_in[strlen(buffer_in)-1] = '\0';
+
+                char final[BUFSIZ];
+                memset(final, 0, sizeof(final));
+                strcpy(final, my_name);
+                strcat(final, "&");
+                strcat(final, buffer_in);
+
+                if(myState == U_GP_CHAT){
+                    if((sendto(fd_gp, final, strlen(final), 0, 
+                            (struct sockaddr*)&address_bc, len_bc_addr) <= 0)){
+                        perror("ERRRR");
+                }
+        }
+
+    }
+    close(fd_gp);
+}
 
 void print_request(Request request){
     print("("); print(state_to_char(request.state));
@@ -81,7 +146,6 @@ void send_request(Request* request, int fd_client){
         strcpy(buffer_out, state_to_char(request->state));
         strcat(buffer_out, "&");
         strcat(buffer_out, request->info);
-        // print("I've send "); print(buffer_out); print("\n");
         if(send(fd_client, buffer_out, strlen(buffer_out), 0) != strlen(buffer_out))
         { perror("# ERROR in sending messgae");}
         memset(buffer_out, '\0', sizeof(buffer_out));
@@ -114,7 +178,7 @@ void do_response(Response* response){
         print("\n");
         strcpy(pv_chat_name, response->info);
         print("$$$$$$$$$$$$$$$ CHAT WITH ");print(response->info);
-        print(" $$$$$$$$$$$$$$$$$$\n>");
+        print(" $$$$$$$$$$$$$$$$$$\n");
         myState = U_PV_CHAT;
     }
     else if(response->state == _S_PV_TAKE){
@@ -126,6 +190,18 @@ void do_response(Response* response){
     }
     else if(response->state == _S_PV_END){
         print("\nChat is over!\n");
+        myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
+    else if(response->state == _S_GP_PORT){
+        print("$$$$$$$$$$$$$$$ CHAT WITH ");print(response->info);
+        print(" $$$$$$$$$$$$$$$$$$\n");
+        myState = U_GP_CHAT;
+        run_gp_chat(atoi(response->info));
+    }
+    else if(response->state  == _S_GP_404){
+        print("There is no group with name : ");
+        print(gp_chat_name);
         myState = U_SHOW_OPTIONS;
         display_menu();
     }
@@ -172,6 +248,8 @@ void run_client(int server_port){
                 buffer_in[strlen(buffer_in)-1] = '\0';
             
             if(myState == U_ENTER_NAME){
+                memset(my_name, 0, sizeof(my_name));
+                strcpy(my_name, buffer_in);
                 Request request;
                 request.state = _C_MY_NAME_IS;
                 strcpy(request.info, buffer_in);
@@ -239,6 +317,19 @@ void run_client(int server_port){
                     Request request;
                     strcpy(request.info, pv_chat_name);
                     request.state = _C_W_PV_CHAT;
+                    send_request(&request, fd_client);
+                    myState = U_WAITING;
+                }
+
+                if(atoi(buffer_in) == _C_W_GP_CHAT){
+                    print("enter clients name: ");
+                    memset(gp_chat_name, 0, sizeof(gp_chat_name));
+                    read(0, gp_chat_name, NAME_LEN);
+                    if(gp_chat_name[strlen(gp_chat_name)-1] == '\n')
+                        gp_chat_name[strlen(gp_chat_name)-1] = '\0';
+                    Request request;
+                    strcpy(request.info, gp_chat_name);
+                    request.state = _C_W_GP_CHAT;
                     send_request(&request, fd_client);
                     myState = U_WAITING;
                 }
