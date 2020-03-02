@@ -20,6 +20,7 @@ typedef struct{
     char  name[NAME_LEN];
     int   online;
     int   busy;
+    int   fd_socket;
 } User;
 
 typedef struct{
@@ -95,6 +96,14 @@ int users_find_index(int port){
     return -1;
 }
 
+User* users_return_by_name(char *name){
+    int i;
+    for(i = 0; i < MAX_USERS; i++)
+        if(strcmp(name, users[i].name) == 0)
+            return &users[i];
+    return NULL;
+}
+
 User* users_return(int port){
     return &(users[users_find_index(port)]);
 }
@@ -133,6 +142,18 @@ void add_group(char *group_name){
     close(fd);
 }
 
+void print_user(User* user){
+    print("\n\tusername : "); print(user->name); print(" port : "); 
+    print(itoa(user->port,10));
+    print("\n\tfd of : "); print(itoa(user->fd_socket, 10)); print(" busy : ");
+    print(user->busy ? "1" : "0");
+    print(" online : "); print(itoa(user->online, 10)); print("\n");
+}
+
+void print_request(Request request){
+    print("("); print(state_to_char(request.state));
+    print("&"); print(request.info); print(")"); print("\n");
+}
 
 // --------------------------------------------------------------------------
 
@@ -149,6 +170,7 @@ void send_response(Response* response, int fd_client){
 
 void do_request(Request* request, int fd_client){
     if(request->state == _C_CONNECT){
+        request->user->fd_socket = fd_client;
         Response response;
         response.user = request->user;
         strcpy(response.info, "whats ur name?");
@@ -162,8 +184,9 @@ void do_request(Request* request, int fd_client){
         response.state = _S_WHAT_U_WANT;
         strcpy(response.info, "what do u want?");
         response.user = request->user;
+        // ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
         print("* port "); print(itoa(request->user->port, 10)); print(" is ");
-        print(request->user->name); print("\n");
+        print(request->user->name); print(" fd "); print(itoa(request->user->fd_socket, 10)); print("\n");
         send_response(&response, fd_client);
     }
     if(request->state == _C_W_ADD_GP){
@@ -177,7 +200,7 @@ void do_request(Request* request, int fd_client){
     if(request->state == _C_W_GPS_NAME){
         int i;
         Response response;
-        response.state = _S_PRINT;
+        response.state = _S_GPS_NAMES;
         for(i = 0; i < MAX_GROUP_LEN; i++){
             if(strlen(groups[i].name) > 0){
                 strcat(response.info, "\n");
@@ -186,6 +209,74 @@ void do_request(Request* request, int fd_client){
         }
         send_response(&response, fd_client);
     }
+
+    if(request->state == _C_W_PV_CHAT){
+        User* chat_user = users_return_by_name(request->info);
+        if(chat_user == NULL){
+            perror("# ERROR requested user is not valid");
+            Response response;
+            response.state = _S_PV_BUSY;
+            strcpy(response.info, request->info);
+            strcat(response.info, " is busy/offline now, try later!");
+            send_response(&response, fd_client);
+            return;
+        }
+        if(!chat_user->busy && chat_user->online){
+            
+            Response response1; // to finded user
+            Response response2; // to who requested
+            response1.state = _S_PV_STARTED;
+            strcpy(response1.info, request->user->name);
+            send_response(&response1, chat_user->fd_socket);
+
+            response2.state = _S_PV_STARTED;
+            strcpy(response2.info, chat_user->name);
+            send_response(&response2, fd_client);
+            print("* pv chat is started between : ");
+            chat_user->busy = true;
+            request->user->busy = true;
+            print_user(chat_user);
+            print_user(request->user);
+
+        }else{
+            Response response;
+            response.state = _S_PV_BUSY;
+            strcpy(response.info, request->info);
+            strcat(response.info, " is busy/offline now, try later!");
+            send_response(&response, fd_client);
+        }
+    }
+
+    if(request->state == _C_PV_SEND){
+        char to[NAME_LEN];
+        char message[INFO_LEN];
+        memset(to, 0, sizeof(to));
+        memset(message, 0, sizeof(message));
+        parse_chat_info(request->info, message, to);
+        User* to_user = users_return_by_name(to);
+        if(to_user == NULL)
+        {
+            print(to); print(" with len of ");
+            print(itoa(strlen(to), 10)); print(" is not found\n");
+            return;
+        }
+        Response response;
+        response.state = _S_PV_TAKE;
+        strcpy(response.info, request->user->name);
+        strcat(response.info, "&");
+        strcat(response.info, message);
+        send_response(&response, to_user->fd_socket);
+    }
+    if(request->state == _C_PV_END){
+        User* to_user = users_return_by_name(request->info);
+        Response response;
+        response.state = _S_PV_END;
+        strcpy(response.info, "END OF CHAT");
+        send_response(&response, to_user->fd_socket);
+        to_user->busy = false;
+        request->user->busy = false;
+    }
+
 }
 //------------------------------------ SERVER Stuff --------------------
 
@@ -237,7 +328,8 @@ void run_server(int server_port){
             print("+ new connection on port : "); 
             print(itoa(ntohs(address_client.sin_port), 10)); print("\n");
 
-            User* user = users_init(ntohs(address_client.sin_port)); 
+            User* user = users_init(ntohs(address_client.sin_port));
+            user->fd_socket = fd_client;
             Request request;
             request.user  = user;
             request.state = _C_CONNECT;
@@ -291,19 +383,23 @@ void run_server(int server_port){
 }
 
 void test(){
-    char *msg = "shit";
-    printf("%d\n", char_to_state(msg));
-    users_init(9002);
-    users_init(2000);
-    users_init(91);
-    users_init(124);
-    User* user = users_return(91);
-    strcpy(user->name, "kiarash norouzi");
-    printf("%s on port %d is : %d\n", user->name, user->port, user->online);
-    users_delete(user);
-    printf("%s on port %d is : %d\n", user->name, user->port, user->online);
-    strcpy(user->name, "ali has");
-    printf("%s on port %d is : %d\n", user->name, user->port, user->online);
+    // char *msg = "shit";
+    // printf("%d\n", char_to_state(msg));
+    // users_init(9002);
+    // users_init(2000);
+    // users_init(91);
+    // users_init(124);
+    // User* user = users_return(91);
+    // User* user2 = users_return(9002);
+    // strcpy(user2->name, "ali ghanbari");
+    // strcpy(user->name, "kiarash norouzi");
+    // if(users_return_by_name("kiara norouzi") != NULL)
+    //     print("YAAA");
+    char message[INFO_LEN];
+    char to[NAME_LEN];
+    char* info = "kiarash&nourzi";
+    parse_chat_info(info, message, to);
+    print(to);print("\n");print(message);
 }
 
 int main(int argc, char* argv[]){

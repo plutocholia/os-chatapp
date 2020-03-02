@@ -21,23 +21,37 @@
 #define true            1
 #define false           0
 
-#define C_CONNECT         "C_CONNECT"
-#define S_WHO_R_U         "S_WHO_R_U"
-#define S_WHAT_U_WANT     "S_WHAT_U_WANT"
-#define S_PRINT           "S_PRINT"
-#define C_MY_NAME_IS      "C_MY_NAME_IS"
 
-#define C_W_GPS_NAME      "C_W_GPS_NAME"
-#define C_W_PV_CHAT       "C_W_PV_CHAT"
-#define C_W_GP_CHAT       "C_W_GP_CHAT"
-#define C_W_ADD_GP        "C_W_ADD_GP"
-#define C_W_EXIT          "C_W_EXIT"
+#define S_WHO_R_U       "S_WHO_R_U"
+#define S_WHAT_U_WANT   "S_WHAT_U_WANT"
+#define S_GPS_NAMES     "S_GPS_NAMES"
+#define S_PV_BUSY       "S_PV_BUSY"
+#define S_PV_STARTED    "S_PV_STARTED"
+#define S_PV_TAKE       "S_PV_TAKE"
+#define S_PV_END        "S_PV_END"
+
+#define C_PV_SEND       "C_PV_SEND"
+#define C_PV_END        "C_PV_END"
+#define C_CONNECT       "C_CONNECT"
+#define C_MY_NAME_IS    "C_MY_NAME_IS"
+#define C_W_GPS_NAME    "C_W_GPS_NAME"
+#define C_W_PV_CHAT     "C_W_PV_CHAT"
+#define C_W_GP_CHAT     "C_W_GP_CHAT"
+#define C_W_ADD_GP      "C_W_ADD_GP"
+#define C_W_EXIT        "C_W_EXIT"
 
 typedef enum{
-    _C_CONNECT      ,
     _S_WHO_R_U      ,
     _S_WHAT_U_WANT  ,
-    _S_PRINT        ,
+    _S_GPS_NAMES    ,
+    _S_PV_BUSY      ,
+    _S_PV_STARTED   ,
+    _S_PV_TAKE      ,
+    _S_PV_END       ,
+
+    _C_PV_SEND      ,
+    _C_PV_END       ,
+    _C_CONNECT      ,
     _C_MY_NAME_IS   ,
     _C_W_GPS_NAME   ,
     _C_W_PV_CHAT    ,
@@ -49,17 +63,37 @@ typedef enum{
 // ---------------------------- TOOLS ----------------------------------------
 State char_to_state(char *st){
 
-    if(strcmp(st, C_CONNECT) == 0)
-        return _C_CONNECT;
 
     if(strcmp(st, S_WHO_R_U) == 0)
         return _S_WHO_R_U;
     
-    if(strcmp(st, S_PRINT) == 0)
-        return _S_PRINT;
+    if(strcmp(st, S_GPS_NAMES) == 0)
+        return _S_GPS_NAMES;
 
     if(strcmp(st, S_WHAT_U_WANT) == 0)
         return _S_WHAT_U_WANT;
+
+    if(strcmp(st, S_PV_BUSY) == 0)
+        return _S_PV_BUSY;
+
+    if(strcmp(st, S_PV_STARTED) == 0)
+        return _S_PV_STARTED;
+
+    if(strcmp(st, S_PV_TAKE) == 0)
+        return _S_PV_TAKE;
+
+    if(strcmp(st, S_PV_END) == 0)
+        return _S_PV_END;
+
+
+    if(strcmp(st, C_PV_SEND) == 0)
+        return _C_PV_SEND;
+
+    if(strcmp(st, C_PV_END) == 0)
+        return _C_PV_END;
+
+    if(strcmp(st, C_CONNECT) == 0)
+        return _C_CONNECT;
 
     if(strcmp(st, C_MY_NAME_IS) == 0)
         return _C_MY_NAME_IS;
@@ -84,17 +118,37 @@ State char_to_state(char *st){
 
 char* state_to_char(State st){
 
-    if(st == _C_CONNECT)
-        return C_CONNECT;
-
     if(st == _S_WHO_R_U)
         return S_WHO_R_U;
 
-    if(st == _S_PRINT)
-        return S_PRINT;
+    if(st == _S_GPS_NAMES)
+        return S_GPS_NAMES;
         
     if(st == _S_WHAT_U_WANT)
         return S_WHAT_U_WANT;
+    
+    if(st == _S_PV_BUSY)
+        return S_PV_BUSY;
+
+    if(st == _S_PV_STARTED)
+        return S_PV_STARTED;
+
+    if(st == _S_PV_TAKE)
+        return S_PV_TAKE;
+    
+     if(st == _S_PV_END)
+        return S_PV_END;
+    
+
+
+    if(st == _C_PV_END)
+        return C_PV_END;
+
+    if(st == _C_PV_SEND)
+        return C_PV_SEND;
+
+    if(st == _C_CONNECT)
+        return C_CONNECT;
 
     if(st == _C_MY_NAME_IS)
         return C_MY_NAME_IS;
@@ -152,7 +206,6 @@ char* super_strcat(int n, ...){
     return main;
 }
 
-
 int max(int a, int b){
     return (a >= b) ? a : b;
 }
@@ -200,5 +253,32 @@ void handle_fdset(int *_max, fd_set *fds_set, int *fds, int len){
          *_max = max(fds[i], *_max);
     }
 }
+
+void parse_chat_info(char* info, char* msg, char* to){
+    char message[INFO_LEN];
+    char too[NAME_LEN];
+    memset(message, '\0', sizeof(message));
+    memset(too, '\0', sizeof(too));
+    int i = 0, read_state = 1, j = 0;
+    while( i < strlen(info)){
+        if(read_state){
+            if(info[i] == '&'){
+               read_state = 0; 
+               j = 0;
+            }else{
+                too[j] = info[i];
+                j += 1;
+            }
+        }
+        else{
+            message[j] = info[i];
+            j += 1;
+        }
+        i += 1;
+    }
+    strcpy(msg, message);
+    strcpy(to, too);
+}
+
 
 #endif

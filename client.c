@@ -21,6 +21,13 @@ typedef struct{
     State state;
 } Response;
 
+typedef enum{
+    U_ENTER_GP_NAME,
+    U_ENTER_NAME,
+    U_PV_CHAT,
+    U_SHOW_OPTIONS,
+    U_WAITING
+} MyState;
 
 void parse_response(char *msg, Response* response){
     char state[STATE_LEN];
@@ -48,12 +55,19 @@ void parse_response(char *msg, Response* response){
     response->state = char_to_state(state);
 }
 
+
 char buffer_out[BUFSIZE];
 char buffer_in[BUFSIZE];
-State serverState;
+char pv_chat_name[NAME_LEN];
+MyState myState;
+
+void print_request(Request request){
+    print("("); print(state_to_char(request.state));
+    print("&"); print(request.info); print(")"); print("\n");
+}
 
 void display_menu(){
-    print("\n\n");
+    print("\n~~~~~~~~~~~ OPTIONS ~~~~~~~~~~~~~\n");
     print(itoa(_C_W_GPS_NAME,10));   print(". See All groups\n");
     print(itoa(_C_W_ADD_GP,  10));   print(". Make group\n");
     print(itoa(_C_W_GP_CHAT, 10));   print(". Enter to group\n");
@@ -72,6 +86,49 @@ void send_request(Request* request, int fd_client){
         { perror("# ERROR in sending messgae");}
         memset(buffer_out, '\0', sizeof(buffer_out));
         return;
+}
+
+void do_response(Response* response){
+    print("server:("); print(state_to_char(response->state));print(")\n");
+    if(response->state == _S_WHO_R_U){
+        print("enter ur name: ");
+        myState = U_ENTER_NAME;
+    }
+    else if(response->state == _S_GPS_NAMES){
+        print("###### GROUPS NAMES ######");
+        print(response->info);
+        print("\n#####################");
+        myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
+    else if(response->state == _S_WHAT_U_WANT){
+        myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
+    else if(response->state == _S_PV_BUSY){
+        print(response->info); print("\n");
+        myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
+    else if(response->state == _S_PV_STARTED){
+        print("\n");
+        strcpy(pv_chat_name, response->info);
+        print("$$$$$$$$$$$$$$$ CHAT WITH ");print(response->info);
+        print(" $$$$$$$$$$$$$$$$$$\n>");
+        myState = U_PV_CHAT;
+    }
+    else if(response->state == _S_PV_TAKE){
+        char message[INFO_LEN];
+        char to[NAME_LEN];
+        parse_chat_info(response->info, message, to);
+        print(pv_chat_name); print(":"); print(message);print("\n>");
+        myState = U_PV_CHAT;
+    }
+    else if(response->state == _S_PV_END){
+        print("\nChat is over!\n");
+        myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
 }
 
 void run_client(int server_port){
@@ -100,41 +157,51 @@ void run_client(int server_port){
             if((read_size = read(fd_client, buffer_in, sizeof(buffer_in))) == 0){ 
                 // server is gone !
             }
-            else{
+            else{   // -------------------------------------- SERVER RESPONSES -----------------------
                 buffer_in[read_size] = '\0';
                 Response response;
                 parse_response(buffer_in, &response);
-                serverState = response.state;
-                print("server:("); print(state_to_char(response.state)); 
-                print("):"); print(response.info); print(" ");
-                
-                if(serverState == _S_PRINT){
-                    serverState = _S_WHAT_U_WANT;
-                    display_menu();
-                }
-
-                else if(serverState == _S_WHAT_U_WANT){
-                    display_menu();
-                }
+                do_response(&response);
             }
         }
 
-        if(FD_ISSET(0, &fds_set)){
+        if(FD_ISSET(0, &fds_set)){ // ------------------------------- STDIN TO SERVER -------------------
             memset(buffer_in, '\0', sizeof(buffer_in));
             read(0, buffer_in, BUFSIZE);
             if(buffer_in[strlen(buffer_in)-1] == '\n')
                 buffer_in[strlen(buffer_in)-1] = '\0';
             
-            if(serverState == _S_WHO_R_U){
+            if(myState == U_ENTER_NAME){
                 Request request;
                 request.state = _C_MY_NAME_IS;
                 strcpy(request.info, buffer_in);
-                print(state_to_char(request.state)); print("()"); print(request.info); print("\n");
                 memset(buffer_in, '\0', sizeof(buffer_in));
                 send_request(&request, fd_client);
             }
 
-            if(serverState == _S_WHAT_U_WANT){
+            else if(myState == U_PV_CHAT){
+                if(strcmp(buffer_in, "<exit>") == 0){
+                    Request request;
+                    request.state = _C_PV_END;
+                    strcpy(request.info, pv_chat_name);
+                    print_request(request);
+                    memset(buffer_in, '\0', sizeof(buffer_in));
+                    send_request(&request, fd_client);
+                    myState = U_SHOW_OPTIONS;
+                    display_menu();
+                }else{
+                    Request request;
+                    request.state = _C_PV_SEND;
+                    strcpy(request.info, pv_chat_name);
+                    strcat(request.info, "&");
+                    strcat(request.info, buffer_in);
+                    memset(buffer_in, '\0', sizeof(buffer_in));
+                    send_request(&request, fd_client);
+                    print(">");
+                }
+            }
+
+            else if(myState == U_SHOW_OPTIONS){
                 
                 if(atoi(buffer_in) == _C_W_EXIT){
                     print("eybaba\n");
@@ -152,8 +219,7 @@ void run_client(int server_port){
                     strcpy(request.info, gpName);
                     request.state = _C_W_ADD_GP;
                     send_request(&request, fd_client);
-
-                    serverState = _S_WHAT_U_WANT;
+                    myState = U_SHOW_OPTIONS;
                     display_menu();
                 }
 
@@ -161,11 +227,23 @@ void run_client(int server_port){
                     Request request;
                     request.state = _C_W_GPS_NAME;
                     send_request(&request, fd_client);
-
-                    serverState = _S_WHAT_U_WANT;
+                    myState = U_SHOW_OPTIONS;
                 }
                 
+                if(atoi(buffer_in) == _C_W_PV_CHAT){
+                    print("enter clients name: ");
+                    memset(pv_chat_name, 0, sizeof(pv_chat_name));
+                    read(0, pv_chat_name, NAME_LEN);
+                    if(pv_chat_name[strlen(pv_chat_name)-1] == '\n')
+                        pv_chat_name[strlen(pv_chat_name)-1] = '\0';
+                    Request request;
+                    strcpy(request.info, pv_chat_name);
+                    request.state = _C_W_PV_CHAT;
+                    send_request(&request, fd_client);
+                    myState = U_WAITING;
+                }
             }
+
         }
 
     }
