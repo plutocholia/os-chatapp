@@ -216,12 +216,14 @@ void do_request(Request* request, int fd_client){
             response.state = _S_GP_PORT;
             strcpy(response.info, itoa(the_gp->port, 10));
             send_response(&response, fd_client);
+            the_gp->users[the_gp->user_count++] = request->user;
         }
     }
 
     if(request->state == _C_W_GPS_NAME){
         int i;
         Response response;
+        strcpy(response.info, "");
         response.state = _S_GPS_NAMES;
         for(i = 0; i < MAX_GROUP_LEN; i++){
             if(strlen(groups[i].name) > 0){

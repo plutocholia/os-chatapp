@@ -109,19 +109,24 @@ void run_gp_chat(int port){
             if(buffer_in[strlen(buffer_in)-1] == '\n')
                 buffer_in[strlen(buffer_in)-1] = '\0';
 
-                char final[BUFSIZ];
-                memset(final, 0, sizeof(final));
-                strcpy(final, my_name);
-                strcat(final, "&");
-                strcat(final, buffer_in);
+            int bye = strcmp(buffer_in, "<exit>");
 
-                if(myState == U_GP_CHAT){
-                    if((sendto(fd_gp, final, strlen(final), 0, 
-                            (struct sockaddr*)&address_bc, len_bc_addr) <= 0)){
-                        perror("ERRRR");
+            char final[BUFSIZ];
+            memset(final, 0, sizeof(final));
+            strcpy(final, my_name);
+            strcat(final, "&");
+            strcat(final, (bye == 0) ?  "BYE, I'M DONE." : buffer_in );
+
+            if(myState == U_GP_CHAT){
+                if((sendto(fd_gp, final, strlen(final), 0, 
+                        (struct sockaddr*)&address_bc, len_bc_addr) <= 0)){
+                    perror("ERRRR");
                 }
+                if(bye == 0){
+                    break;
+                }
+            }
         }
-
     }
     close(fd_gp);
 }
@@ -153,7 +158,7 @@ void send_request(Request* request, int fd_client){
 }
 
 void do_response(Response* response){
-    print("server:("); print(state_to_char(response->state));print(")\n");
+    // print("server:("); print(state_to_char(response->state));print(")\n");
     if(response->state == _S_WHO_R_U){
         print("enter ur name: ");
         myState = U_ENTER_NAME;
@@ -198,6 +203,8 @@ void do_response(Response* response){
         print(" $$$$$$$$$$$$$$$$$$\n");
         myState = U_GP_CHAT;
         run_gp_chat(atoi(response->info));
+        myState = U_SHOW_OPTIONS;
+        display_menu();
     }
     else if(response->state  == _S_GP_404){
         print("There is no group with name : ");
@@ -305,7 +312,7 @@ void run_client(int server_port){
                     Request request;
                     request.state = _C_W_GPS_NAME;
                     send_request(&request, fd_client);
-                    myState = U_SHOW_OPTIONS;
+                    myState = U_WAITING;
                 }
                 
                 if(atoi(buffer_in) == _C_W_PV_CHAT){
