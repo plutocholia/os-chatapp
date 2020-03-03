@@ -304,7 +304,14 @@ void do_request(Request* request, int fd_client){
     }
     if(request->state == _C_W_SEC_CHAT){
         User* to_user = users_return_by_name(request->info);
-        if(to_user->online && (to_user->busy == 0)){
+        if(to_user == NULL){
+            Response response;
+            response.state = _S_PV_BUSY;
+            strcpy(response.info, request->info);
+            strcat(response.info, " is busy/offline now, try later!");
+            send_response(&response, fd_client);
+        }
+        else if(to_user->online && (to_user->busy == 0)){
             Response response;
             response.state = _S_SEC_RUN;
             strcpy(response.info, request->user->name);
