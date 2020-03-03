@@ -168,7 +168,7 @@ void send_response(Response* response, int fd_client){
         strcat(buffer_out, "&");
         strcat(buffer_out, response->info);
         if(send(fd_client, buffer_out, strlen(buffer_out), 0) != strlen(buffer_out))
-        { perror("# ERROR in sending gretting messgae");}
+        { perror("# ERROR in sending response messgae");}
         memset(buffer_out, 0, sizeof(buffer_out));
         return;
 }
@@ -191,7 +191,8 @@ void do_request(Request* request, int fd_client){
         response.user = request->user;
         // ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
         print("* port "); print(itoa(request->user->port, 10)); print(" is ");
-        print(request->user->name); print(" fd "); print(itoa(request->user->fd_socket, 10)); print("\n");
+        print(request->user->name); print(" fd "); print(itoa(request->user->fd_socket, 10)); 
+        print("\n");
         send_response(&response, fd_client);
     }
     if(request->state == _C_W_ADD_GP){
@@ -201,7 +202,8 @@ void do_request(Request* request, int fd_client){
         new_gp.port = 10003 + gps_count;
         new_gp.user_count = 0;
         groups[gps_count++] = new_gp;
-        print("* "); print(request->info); print(" is added to gps on port "); print(itoa(new_gp.port, 10)); print("\n");
+        print("* "); print(request->info); print(" is added to gps on port ");
+        print(itoa(new_gp.port, 10)); print("\n");
     }
     if(request->state == _C_W_GP_CHAT){
         Group* the_gp = group_return_by_name(request->info);
@@ -300,12 +302,44 @@ void do_request(Request* request, int fd_client){
         to_user->busy = false;
         request->user->busy = false;
     }
-
+    if(request->state == _C_W_SEC_CHAT){
+        User* to_user = users_return_by_name(request->info);
+        if(to_user->online && (to_user->busy == 0)){
+            Response response;
+            response.state = _S_SEC_RUN;
+            strcpy(response.info, request->user->name);
+            send_response(&response, to_user->fd_socket);
+        }
+        else{
+            Response response;
+            response.state = _S_SEC_BUSY;
+            strcpy(response.info, to_user->name);
+            strcat(response.info, " is busy");
+            send_response(&response, fd_client);
+        }
+    }
+    if(request->state == _C_SEC_READY){
+        char user_port[INFO_LEN];
+        char dest_name[NAME_LEN];
+        memset(user_port, 0, sizeof(user_port));
+        memset(dest_name, 0, sizeof(dest_name));
+        parse_chat_info(request->info, user_port, dest_name);
+        User* to_user = users_return_by_name(dest_name);
+        Response response;
+        response.state = _S_SEC_STARTED;
+        strcpy(response.info, user_port);
+        send_response(&response, to_user->fd_socket);
+    }
+    if(request->state == _C_SEC_END){
+        User* user = users_return_by_name(request->info);
+        user->busy = 0;
+        user->online = 1;
+    }
 }
 //------------------------------------ SERVER Stuff --------------------
 
 void run_server(int server_port){
-    create_groups_file();
+    // create_groups_file();
 
     // initailization of listenning socket
     int fd_server                     = create_tcp_socketFD();

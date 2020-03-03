@@ -32,8 +32,16 @@
 #define S_PV_END        "S_PV_END"
 #define S_GP_PORT       "S_GP_PORT"
 #define S_GP_404        "S_GP_404"
+#define S_SEC_STARTED   "S_SEC_STARTED"
+#define S_SEC_BUSY      "S_SEC_BUSY"
+#define S_SEC_RUN       "S_SEC_RUN"
+#define S_SEC_SEND      "S_SEC_SEND"
+#define S_SEC_END       "S_SEC_END"
 
-
+#define C_SEC_SEND      "C_SEC_SEND"
+#define C_SEC_READY     "C_SEC_READY"
+#define C_SEC_END       "C_SEC_END"
+#define C_W_SEC_CHAT    "C_W_SEC_CHAT"
 #define C_GP_SEND       "C_GP_SEND"
 #define C_PV_SEND       "C_PV_SEND"
 #define C_PV_END        "C_PV_END"
@@ -55,7 +63,16 @@ typedef enum{
     _S_PV_END       ,
     _S_GP_PORT      ,
     _S_GP_404       ,
-    
+    _S_SEC_STARTED  ,
+    _S_SEC_BUSY     ,
+    _S_SEC_RUN      ,
+    _S_SEC_SEND     ,
+    _S_SEC_END      ,
+
+    _C_SEC_SEND     ,
+    _C_SEC_READY    ,
+    _C_SEC_END      ,
+    _C_W_SEC_CHAT   ,
     _C_GP_SEND      ,
     _C_PV_SEND      ,
     _C_PV_END       ,
@@ -99,6 +116,34 @@ State char_to_state(char *st){
     if(strcmp(st, S_GP_404) == 0)
         return _S_GP_404;
 
+    if(strcmp(st, S_SEC_STARTED) == 0)
+        return _S_SEC_STARTED;
+
+    if(strcmp(st, S_SEC_BUSY) == 0)
+        return _S_SEC_BUSY;
+    
+    if(strcmp(st, S_SEC_RUN) == 0)
+        return _S_SEC_RUN;
+    
+    if(strcmp(st, S_SEC_SEND) == 0)
+        return _S_SEC_SEND;
+    
+    if(strcmp(st, S_SEC_END) == 0)
+        return _S_SEC_END;
+
+
+
+     if(strcmp(st, C_SEC_SEND) == 0)
+        return _C_SEC_SEND;
+
+    if(strcmp(st, C_SEC_READY) == 0)
+        return _C_SEC_READY;
+
+    if(strcmp(st, C_SEC_END) == 0)
+        return _C_SEC_END;
+
+    if(strcmp(st, C_W_SEC_CHAT) == 0)
+        return _C_W_SEC_CHAT;
 
     if(strcmp(st, C_GP_SEND) == 0)
         return _C_GP_SEND;
@@ -162,6 +207,34 @@ char* state_to_char(State st){
     if(st == _S_GP_404)
         return S_GP_404;
 
+    if(st == _S_SEC_STARTED)
+        return S_SEC_STARTED;
+    
+    if(st == _S_SEC_BUSY)
+        return S_SEC_BUSY;
+    
+    if(st == _S_SEC_RUN)
+        return S_SEC_RUN;
+
+    if(st == _S_SEC_SEND)
+        return S_SEC_SEND;
+
+    if(st == _S_SEC_END)
+        return S_SEC_END;
+
+
+
+    if(st == _C_SEC_SEND)
+        return C_SEC_SEND;
+
+    if(st == _C_SEC_READY)
+        return C_SEC_READY;
+
+    if(st == _C_SEC_END)
+        return C_SEC_END;
+
+    if(st == _C_W_SEC_CHAT)
+        return C_W_SEC_CHAT;
 
     if(st == _C_GP_SEND)
         return C_GP_SEND;

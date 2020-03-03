@@ -27,7 +27,9 @@ typedef enum{
     U_PV_CHAT,
     U_SHOW_OPTIONS,
     U_WAITING,
-    U_GP_CHAT
+    U_GP_CHAT,
+    U_SEC_CHAT
+
 } MyState;
 
 void parse_response(char *msg, Response* response){
@@ -56,15 +58,242 @@ void parse_response(char *msg, Response* response){
     response->state = char_to_state(state);
 }
 
+void parse_request(Request* request, char *msg){
+    char state[STATE_LEN];
+    char info[INFO_LEN];
+    memset(info, '\0', sizeof(info));
+    memset(state, '\0', sizeof(state));
+    int i = 0, read_state = 1, j = 0;
+    while( i < strlen(msg)){
+        if(read_state){
+            if(msg[i] == '&'){
+               read_state = 0; 
+               j = 0;
+            }else{
+                state[j] = msg[i];
+                j += 1;
+            }
+        }
+        else{
+            info[j] = msg[i];
+            j += 1;
+        }
+        i += 1;
+    }
+    strcpy(request->info, info);
+    request->state = char_to_state(state);
+}
 
 char buffer_out[BUFSIZE];
 char buffer_in[BUFSIZE];
 char my_name[NAME_LEN];
+int  my_port;
+char sec_chat_name[NAME_LEN];
+int  sec_chat_port;
 char pv_chat_name[NAME_LEN];
 char gp_chat_name[NAME_LEN];
+int  gp_chat_port;
+int  fd_master_server;
 MyState myState;
 
+void send_request(Request*, int);
+
+void send_response(Response* response, int fd_client){
+        memset(buffer_out, 0, sizeof(buffer_out));
+        strcpy(buffer_out, state_to_char(response->state));
+        strcat(buffer_out, "&");
+        strcat(buffer_out, response->info);
+        if(send(fd_client, buffer_out, strlen(buffer_out), 0) != strlen(buffer_out))
+        { perror("# ERROR in sending response");}
+        memset(buffer_out, 0, sizeof(buffer_out));
+        return;
+}
+
+void run_sec_chat_client(){
+    print(itoa(sec_chat_port, 10)); print("\n");
+    int fd_client = create_tcp_socketFD();
+    struct sockaddr_in address_server = create_address(sec_chat_port);
+    int address_size = sizeof(address_server);
+    print("trying connect to "); print(itoa(sec_chat_port, 10)); print("\n");
+    if(connect(fd_client, (struct sockaddr *) &address_server, address_size)<0){
+        perror("# ERROR Couldn't Connect to the Server");
+        exit(EXIT_FAILURE);
+    }
+    print("connected to "); print(itoa(sec_chat_port, 10)); print("\n");
+    print("$$$$$$$$$$$$$$$ CHAT WITH ");print(sec_chat_name);
+    print(" $$$$$$$$$$$$$$$$$$\n");
+
+    fd_set fds_set;
+    int _max_fd = fd_client;
+
+    while(true){
+        FD_ZERO(&fds_set);
+        FD_SET(fd_client, &fds_set);
+        FD_SET(0, &fds_set);
+        
+        if(((select(_max_fd + 1, &fds_set, NULL, NULL, NULL)) < 0) && (errno!=EINTR))
+        { perror("# ERROR in selecting");}
+
+        if(FD_ISSET(fd_client, &fds_set)){
+            int read_size;
+            if((read_size = read(fd_client, buffer_in, sizeof(buffer_in))) == 0){ 
+                // server is gone !
+            }
+            else{   // -------------------------------------- SERVER RESPONSES -----------------------
+                buffer_in[read_size] = '\0';
+                Response response;
+                parse_response(buffer_in, &response);
+                
+                print(sec_chat_name); print(" : "); print(response.info); print("\n");
+
+                if(response.state == _S_SEC_END){
+                    Request request_done;
+                    request_done.state = _C_SEC_END;
+                    strcpy(request_done.info, my_name);
+                    send_request(&request_done, fd_master_server);
+                    break;
+                }
+            }
+        }
+
+        if(FD_ISSET(0, &fds_set)){ // ------------------------------- STDIN TO SERVER -------------------
+            memset(buffer_in, '\0', sizeof(buffer_in));
+            read(0, buffer_in, BUFSIZE);
+            if(buffer_in[strlen(buffer_in)-1] == '\n')
+                buffer_in[strlen(buffer_in)-1] = '\0';
+
+            int bye = strcmp(buffer_in, "<exit>");
+            
+            char final[BUFSIZ];
+            memset(final, 0, sizeof(final));
+            strcpy(final, (bye == 0) ?  "BYE, I'M DONE." : buffer_in );
+
+            Request request;
+            request.state = (bye == 0) ? _C_SEC_END :  _C_SEC_SEND;
+            strcpy(request.info, final);
+
+            if(myState == U_SEC_CHAT){
+                send_request(&request, fd_client);
+                if(bye == 0){
+                    Request request_done;
+                    request_done.state = _C_SEC_END;
+                    strcpy(request_done.info, my_name);
+                    send_request(&request_done, fd_master_server);
+                    break;
+                }
+            }
+
+        }
+    }
+
+    close(fd_client);
+}
+
+void run_sec_chat_server(char* name_client){
+    int fd_server                     = create_tcp_socketFD();
+    struct sockaddr_in address_server = create_address(my_port);
+    int address_len = sizeof(address_server);
+    int opts = 1;
+    if(setsockopt(fd_server, SOL_SOCKET, SO_REUSEADDR, (char *)&opts, sizeof(opts)) < 0 ){
+        perror("# ERROR in set socket opt");
+        exit(EXIT_FAILURE);
+    }
+    bind_address_to_socket(&fd_server, &address_server);
+    listen_to_connection(&fd_server, 10);
+    
+    Request request;
+    request.state = _C_SEC_READY;
+    strcpy(request.info, name_client);
+    strcat(request.info, "&");
+    strcat(request.info, itoa(my_port, 10));
+    send_request(&request, fd_master_server);
+
+    print("\n Entered to secret chat and waiting for client named : ");
+    print(name_client); print("\n");
+
+    int fd_client;
+    struct sockaddr_in address_client;
+    if((fd_client = accept(fd_server, (struct sockaddr*) &address_client, 
+                            (socklen_t *) (&address_len))) < 0){
+                perror("# ERROR in accepting client stuff");
+                exit(EXIT_FAILURE);
+    }
+    
+    print(name_client); print(" is connected !\n");
+
+    print("$$$$$$$$$$$$$$$ CHAT WITH ");print(name_client);
+    print(" $$$$$$$$$$$$$$$$$$\n");
+
+    fd_set fds_set;
+    int _max_fd = fd_client;
+
+    while(true){
+        FD_ZERO(&fds_set);
+        FD_SET(fd_client, &fds_set);
+        FD_SET(0, &fds_set);
+        
+        if(((select(_max_fd + 1, &fds_set, NULL, NULL, NULL)) < 0) && (errno!=EINTR))
+        { perror("# ERROR in selecting");}
+
+        if(FD_ISSET(fd_client, &fds_set)){
+            int read_size;
+            if((read_size = read(fd_client, buffer_in, sizeof(buffer_in))) == 0){ 
+                // client is gone !
+            }
+            else{   // -------------------------------------- SERVER RESPONSES -----------------------
+                buffer_in[read_size] = '\0';
+                // Response response;
+                // parse_response(buffer_in, &response);
+
+                Request request;
+                parse_request(&request, buffer_in);
+                print(name_client); print(" : "); print(request.info); print("\n");
+                if(request.state == _C_SEC_END){
+                    Request request_done;
+                    request_done.state = _C_SEC_END;
+                    strcpy(request_done.info, my_name);
+                    send_request(&request_done, fd_master_server);
+                    break;
+                }
+                
+            }
+        }
+
+        if(FD_ISSET(0, &fds_set)){ // ------------------------------- STDIN TO SERVER -------------------
+            memset(buffer_in, '\0', sizeof(buffer_in));
+            read(0, buffer_in, BUFSIZE);
+            if(buffer_in[strlen(buffer_in)-1] == '\n')
+                buffer_in[strlen(buffer_in)-1] = '\0';
+
+            int bye = strcmp(buffer_in, "<exit>");
+            
+            char final[BUFSIZ];
+            memset(final, 0, sizeof(final));
+            strcpy(final, (bye == 0) ?  "BYE, I'M DONE." : buffer_in );
+
+            Response response;
+            response.state = (bye == 0) ? _S_SEC_END : _S_SEC_SEND;
+            strcpy(response.info, final);
+
+            if(myState == U_SEC_CHAT){
+                send_response(&response, fd_client);
+                if(bye == 0){
+                    Request request_done;
+                    request_done.state = _C_SEC_END;
+                    strcpy(request_done.info, my_name);
+                    send_request(&request_done, fd_master_server);
+                    break;
+                }
+            }
+
+        }
+    }
+
+    close(fd_server);
+}
+
 void run_gp_chat(int port){
+    gp_chat_port  = port;
     int fd_gp = create_udp_socketFD();
     struct sockaddr_in address_bc = create_broadcast_address(port);
     struct sockaddr_in address    = create_address(port);
@@ -138,11 +367,12 @@ void print_request(Request request){
 
 void display_menu(){
     print("\n~~~~~~~~~~~ OPTIONS ~~~~~~~~~~~~~\n");
-    print(itoa(_C_W_GPS_NAME,10));   print(". See All groups\n");
-    print(itoa(_C_W_ADD_GP,  10));   print(". Make group\n");
-    print(itoa(_C_W_GP_CHAT, 10));   print(". Enter to group\n");
-    print(itoa(_C_W_PV_CHAT, 10));   print(". Enter to private chat\n");
-    print(itoa(_C_W_EXIT,    10));   print(". Exit\n");
+    print(itoa(_C_W_GPS_NAME, 10)); print(". See   All groups\n");
+    print(itoa(_C_W_ADD_GP,   10)); print(". Make  a group\n");
+    print(itoa(_C_W_GP_CHAT,  10)); print(". Start a group   chat\n");
+    print(itoa(_C_W_PV_CHAT,  10)); print(". Start a private chat\n");
+    print(itoa(_C_W_SEC_CHAT, 10)); print(". Start a Secret  Chat\n");
+    print(itoa(_C_W_EXIT,     10)); print(". Exit\n");
     print("Enter ur option: ");
 }
 
@@ -212,6 +442,30 @@ void do_response(Response* response){
         myState = U_SHOW_OPTIONS;
         display_menu();
     }
+    else if(response->state == _S_SEC_BUSY){
+        print(response->info); print("\n");
+        myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
+    else if(response->state == _S_SEC_RUN){
+        myState = U_SEC_CHAT;
+        run_sec_chat_server(response->info);
+
+        // TODO:sending to server that chat is over!
+
+        myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
+    else if(response->state == _S_SEC_STARTED){
+        myState = U_SEC_CHAT;
+        sec_chat_port = atoi(response->info);
+        run_sec_chat_client();
+
+        // TODO:sending to server that chat is over
+
+        myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
 }
 
 void run_client(int server_port){
@@ -223,7 +477,7 @@ void run_client(int server_port){
         perror("# ERROR Couldn't Connect to the Server");
         exit(EXIT_FAILURE);
     }
-    
+    fd_master_server = fd_client;
     fd_set fds_set;
     int _max_fd = fd_client;
 
@@ -340,6 +594,19 @@ void run_client(int server_port){
                     send_request(&request, fd_client);
                     myState = U_WAITING;
                 }
+
+                if(atoi(buffer_in) == _C_W_SEC_CHAT){
+                    print("enter clients name: ");
+                    memset(sec_chat_name, 0, sizeof(sec_chat_name));
+                    read(0, sec_chat_name, NAME_LEN);
+                    if(sec_chat_name[strlen(sec_chat_name)-1] == '\n')
+                        sec_chat_name[strlen(sec_chat_name)-1] = '\0';
+                    Request request;
+                    strcpy(request.info, sec_chat_name);
+                    request.state = _C_W_SEC_CHAT;
+                    send_request(&request, fd_client);
+                    myState = U_WAITING;
+                }
             }
 
         }
@@ -350,10 +617,11 @@ void run_client(int server_port){
 
 
 int main(int argc, char* argv[]){
-    if(argc != 2){
+    if(argc != 3){
         print(" :/ port please ! \n");
         exit(-1);
     }
+    my_port = atoi(argv[2]);
     run_client(atoi(argv[1]));
     return 0;
 }
