@@ -4,7 +4,8 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/time.h>
-
+#include <time.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -29,6 +30,7 @@ typedef struct{
     int   online;
     int   port;
     int   user_count;
+    long  last_heatbeat;
 } Group;
 
 typedef struct{
@@ -162,6 +164,18 @@ void print_request(Request request){
 
 // --------------------------------------------------------------------------
 
+void check_groups(int s){
+    int i;
+    for(i = 0; i < gps_count; i++){
+        if((time(NULL) - groups[i].last_heatbeat > 30) && (groups[i].online == 1)){
+            groups[i].online = 0;
+            print("* the group "); print(groups[i].name); 
+            print(" is considered offline now!\n");
+        }
+    }
+    alarm(30);
+}
+
 void send_response(Response* response, int fd_client){
         memset(buffer_out, 0, sizeof(buffer_out));
         strcpy(buffer_out, state_to_char(response->state));
@@ -218,7 +232,10 @@ void do_request(Request* request, int fd_client){
             response.state = _S_GP_PORT;
             strcpy(response.info, itoa(the_gp->port, 10));
             send_response(&response, fd_client);
+            request->user->busy = 1;
             the_gp->users[the_gp->user_count++] = request->user;
+            print("* "); print(request->user->name);
+            print(" join to "); print(the_gp->name); print("\n");
         }
     }
 
@@ -231,6 +248,7 @@ void do_request(Request* request, int fd_client){
             if(strlen(groups[i].name) > 0){
                 strcat(response.info, "\n");
                 strcat(response.info, groups[i].name);
+                strcat(response.info, (groups[i].online == 1) ? " : online" : " : offline");
             }
         }
         send_response(&response, fd_client);
@@ -243,7 +261,14 @@ void do_request(Request* request, int fd_client){
             Response response;
             response.state = _S_PV_BUSY;
             strcpy(response.info, request->info);
-            strcat(response.info, " is busy/offline now, try later!");
+            strcat(response.info, " there is no such user, try later!");
+            send_response(&response, fd_client);
+            return;
+        }
+        if(strcmp(chat_user->name, request->user->name) == 0){
+            Response response;
+            response.state = _S_ITS_U;
+            strcpy(response.info, " r u kidding me?");
             send_response(&response, fd_client);
             return;
         }
@@ -310,8 +335,16 @@ void do_request(Request* request, int fd_client){
             strcpy(response.info, request->info);
             strcat(response.info, " is busy/offline now, try later!");
             send_response(&response, fd_client);
+            return;
         }
-        else if(to_user->online && (to_user->busy == 0)){
+        if(strcmp(to_user->name, request->user->name) == 0){
+            Response response;
+            response.state = _S_ITS_U;
+            strcpy(response.info, " r u kidding me?");
+            send_response(&response, fd_client);
+            return;
+        }
+        else if((to_user->online == 1) && (to_user->busy == 0)){
             Response response;
             response.state = _S_SEC_RUN;
             strcpy(response.info, request->user->name);
@@ -333,14 +366,29 @@ void do_request(Request* request, int fd_client){
         parse_chat_info(request->info, user_port, dest_name);
         User* to_user = users_return_by_name(dest_name);
         Response response;
+        to_user->busy = 1;
+        request->user->busy = 1;
         response.state = _S_SEC_STARTED;
         strcpy(response.info, user_port);
         send_response(&response, to_user->fd_socket);
+        print("* Secret chat is started between "); print(to_user->name);
+        print(" and "); print(request->user->name); print("\n");
     }
     if(request->state == _C_SEC_END){
         User* user = users_return_by_name(request->info);
         user->busy = 0;
         user->online = 1;
+    }
+    if(request->state == _C_GP_BEAT){
+        print("* Heart Beat from : "); print(request->info); print("\n");
+        Group* the_gp = group_return_by_name(request->info);
+        the_gp->last_heatbeat = time(NULL);
+        if(the_gp->online == 0) the_gp->online = 1;
+    }
+    if(request->state == _C_GP_END){
+        print("* "); print(request->user->name); print(" left the ");
+        print(request->info); print(" group.\n");
+        request->user->busy = 0;
     }
 }
 //------------------------------------ SERVER Stuff --------------------
@@ -362,23 +410,28 @@ void run_server(int server_port){
     print(super_strcat(3, "+ server is running on port ", itoa(server_port, 10), " ...\n"));
     
     // accepting conections
-    fd_set fds_set;
+    fd_set fds_set, fds_write;
     int fds[MAX_SERVER_CAPA];
     
     memset(&fds, 0, sizeof(fds));
     int selected, fd_client, _max, i;
     struct sockaddr_in address_client;
 
+    signal(SIGALRM, check_groups);
+    alarm(1);
+
     while(true){
         FD_ZERO(&fds_set);
+        FD_ZERO(&fds_write);
         FD_SET(fd_server, &fds_set);
+        FD_SET(1, &fds_write);
         _max = fd_server;
 
         // initialization of fd_set
         handle_fdset(&_max, &fds_set, fds, MAX_SERVER_CAPA);
 
         // select part
-        if(((selected = select(_max + 1, &fds_set, NULL, NULL, NULL)) < 0) && (errno!=EINTR))
+        if(((selected = select(_max + 1, &fds_set, &fds_write, NULL, NULL)) < 0) && (errno!=EINTR))
         { perror("# ERROR in selecting");}
 
 
@@ -445,6 +498,7 @@ void run_server(int server_port){
             }
         }
     }
+    alarm(0);
     close(fd_server);
 }
 

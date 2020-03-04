@@ -4,7 +4,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/time.h>
-
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -94,6 +94,8 @@ char pv_chat_name[NAME_LEN];
 char gp_chat_name[NAME_LEN];
 int  gp_chat_port;
 int  fd_master_server;
+int  hb_sock;
+struct sockaddr_in hb_addr_in;
 MyState myState;
 
 void send_request(Request*, int);
@@ -292,7 +294,31 @@ void run_sec_chat_server(char* name_client){
     close(fd_server);
 }
 
+void send_beat(int s){
+    Request request;
+    request.state = _C_GP_BEAT;
+    strcpy(request.info, gp_chat_name);
+    send_request(&request, fd_master_server);
+    alarm(5);
+}
+
+// void send_hbeat(int s){
+   
+//     char* msg = "HB";
+//     if(sendto(hb_sock, msg, strlen(msg), 0, 
+//                         (struct sockaddr*)&hb_addr_in, sizeof(struct sockaddr*)) <= 0){
+//                             perror("EROKWOKE");
+//                         }
+                    
+// }
+
 void run_gp_chat(int port){
+  
+    // int hb_port  = 10007;
+    // int hb_sock = create_udp_socketFD();
+    // hb_addr_in = create_broadcast_address(hb_port);
+    // set_broadcast_options(hb_sock);
+
     gp_chat_port  = port;
     int fd_gp = create_udp_socketFD();
     struct sockaddr_in address_bc = create_broadcast_address(port);
@@ -302,15 +328,21 @@ void run_gp_chat(int port){
 
     int len_bc_addr = sizeof(address_bc);
 
-    fd_set fds_set;
+    fd_set fds_set, fds_write;
     int _max_fd = fd_gp;
+
+    signal(SIGALRM, send_beat);
+    alarm(1);
 
     while(true){
         FD_ZERO(&fds_set);
+        FD_ZERO(&fds_write);
         FD_SET(fd_gp, &fds_set);
         FD_SET(0, &fds_set);
+        FD_SET(fd_master_server, &fds_write);
+        FD_SET(1, &fds_write);
         
-        if(((select(_max_fd + 1, &fds_set, NULL, NULL, NULL)) < 0) && (errno!=EINTR))
+        if(((select(max(fd_master_server, fd_gp) + 1, &fds_set, &fds_write, NULL, NULL)) < 0) && (errno!=EINTR))
         { perror("# ERROR in selecting");}
 
         if(FD_ISSET(fd_gp, &fds_set)){
@@ -328,7 +360,6 @@ void run_gp_chat(int port){
                 if(strcmp(name, my_name) != 0){
                     print(name); print(" : "); print(message); print("\n");
                 }
-               
             }
         }
 
@@ -352,11 +383,18 @@ void run_gp_chat(int port){
                     perror("ERRRR");
                 }
                 if(bye == 0){
+                    alarm(0);
+                    Request request;
+                    request.state = _C_GP_END;
+                    strcpy(request.info, gp_chat_name);
+                    send_request(&request, fd_master_server);
                     break;
                 }
             }
         }
     }
+    
+    alarm(0);
     close(fd_gp);
 }
 
@@ -451,8 +489,6 @@ void do_response(Response* response){
         myState = U_SEC_CHAT;
         run_sec_chat_server(response->info);
 
-        // TODO:sending to server that chat is over!
-
         myState = U_SHOW_OPTIONS;
         display_menu();
     }
@@ -461,9 +497,12 @@ void do_response(Response* response){
         sec_chat_port = atoi(response->info);
         run_sec_chat_client();
 
-        // TODO:sending to server that chat is over
-
         myState = U_SHOW_OPTIONS;
+        display_menu();
+    }
+    else if(response->state == _S_ITS_U){
+        myState = U_SHOW_OPTIONS;
+        print("heh, go navazesh ur self\n");
         display_menu();
     }
 }
@@ -547,7 +586,7 @@ void run_client(int server_port){
                     break;
                 }
                 
-                if(atoi(buffer_in) == _C_W_ADD_GP){
+                else if(atoi(buffer_in) == _C_W_ADD_GP){
                     print("enter a name for ur group: ");
                     char gpName[NAME_LEN];
                     memset(gpName, 0, sizeof(gpName));
@@ -562,14 +601,14 @@ void run_client(int server_port){
                     display_menu();
                 }
 
-                if(atoi(buffer_in) == _C_W_GPS_NAME){
+                else if(atoi(buffer_in) == _C_W_GPS_NAME){
                     Request request;
                     request.state = _C_W_GPS_NAME;
                     send_request(&request, fd_client);
                     myState = U_WAITING;
                 }
                 
-                if(atoi(buffer_in) == _C_W_PV_CHAT){
+                else if(atoi(buffer_in) == _C_W_PV_CHAT){
                     print("enter clients name: ");
                     memset(pv_chat_name, 0, sizeof(pv_chat_name));
                     read(0, pv_chat_name, NAME_LEN);
@@ -582,7 +621,7 @@ void run_client(int server_port){
                     myState = U_WAITING;
                 }
 
-                if(atoi(buffer_in) == _C_W_GP_CHAT){
+                else if(atoi(buffer_in) == _C_W_GP_CHAT){
                     print("enter clients name: ");
                     memset(gp_chat_name, 0, sizeof(gp_chat_name));
                     read(0, gp_chat_name, NAME_LEN);
@@ -595,7 +634,7 @@ void run_client(int server_port){
                     myState = U_WAITING;
                 }
 
-                if(atoi(buffer_in) == _C_W_SEC_CHAT){
+                else if(atoi(buffer_in) == _C_W_SEC_CHAT){
                     print("enter clients name: ");
                     memset(sec_chat_name, 0, sizeof(sec_chat_name));
                     read(0, sec_chat_name, NAME_LEN);
@@ -606,6 +645,10 @@ void run_client(int server_port){
                     request.state = _C_W_SEC_CHAT;
                     send_request(&request, fd_client);
                     myState = U_WAITING;
+                }
+                else{
+                    print("Invalid option! try again\n");
+                    print("Enter a valid option : ");
                 }
             }
 

@@ -37,7 +37,10 @@
 #define S_SEC_RUN       "S_SEC_RUN"
 #define S_SEC_SEND      "S_SEC_SEND"
 #define S_SEC_END       "S_SEC_END"
+#define S_ITS_U         "S_ITS_U"
 
+#define C_GP_END        "C_GP_END"
+#define C_GP_BEAT       "C_GP_BEAT"
 #define C_SEC_SEND      "C_SEC_SEND"
 #define C_SEC_READY     "C_SEC_READY"
 #define C_SEC_END       "C_SEC_END"
@@ -68,7 +71,10 @@ typedef enum{
     _S_SEC_RUN      ,
     _S_SEC_SEND     ,
     _S_SEC_END      ,
+    _S_ITS_U        ,
 
+    _C_GP_END       ,
+    _C_GP_BEAT      ,
     _C_SEC_SEND     ,
     _C_SEC_READY    ,
     _C_SEC_END      ,
@@ -131,9 +137,17 @@ State char_to_state(char *st){
     if(strcmp(st, S_SEC_END) == 0)
         return _S_SEC_END;
 
+    if(strcmp(st, S_ITS_U) == 0)
+        return _S_ITS_U;
 
 
-     if(strcmp(st, C_SEC_SEND) == 0)
+    if(strcmp(st, C_GP_END) == 0)
+        return _C_GP_END;
+
+    if(strcmp(st, C_GP_BEAT) == 0)
+        return _C_GP_BEAT;
+
+    if(strcmp(st, C_SEC_SEND) == 0)
         return _C_SEC_SEND;
 
     if(strcmp(st, C_SEC_READY) == 0)
@@ -221,8 +235,16 @@ char* state_to_char(State st){
 
     if(st == _S_SEC_END)
         return S_SEC_END;
+    
+    if(st == _S_ITS_U)
+        return S_ITS_U;
 
 
+    if(st == _C_GP_END)
+        return C_GP_END;
+
+    if(st == _C_GP_BEAT)
+        return C_GP_BEAT;
 
     if(st == _C_SEC_SEND)
         return C_SEC_SEND;
