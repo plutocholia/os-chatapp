@@ -628,7 +628,7 @@ void run_client(int server_port){
                 }
 
                 else if(atoi(buffer_in) == _C_W_GP_CHAT){
-                    print("enter clients name: ");
+                    print("enter groups name: ");
                     memset(gp_chat_name, 0, sizeof(gp_chat_name));
                     read(0, gp_chat_name, NAME_LEN);
                     if(gp_chat_name[strlen(gp_chat_name)-1] == '\n')
