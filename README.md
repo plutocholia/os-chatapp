@@ -1,5 +1,5 @@
 # *First OS course project*
-## `a naive local chat app with c!`
+## `a naive local chat app in C!`
 
 * [X] Adding   Group
 * [X] Sharing  Group List
