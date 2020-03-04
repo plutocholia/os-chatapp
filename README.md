@@ -1,10 +1,11 @@
 ## First OS course project
     a naive chat app with c!
 
-* [ ] Adding Group
-* [ ] Sharing Group List 
-* [ ] Joining to Group
-* [ ] Private Chat
-* [ ] Left From Group
-* [ ] Deleting inactive Group
-* [ ] Adding Logs
+* [X] Adding   Group
+* [X] Sharing  Group List
+* [X] Joining  to Group
+* [X] Private  Chat (client->master->client)
+* [X] Secret   Chat (p2p)
+* [X] Left     From Group
+* [X] Deleting inactive Groups (Heatbeat)
+* [X] Adding   Logs to Server
