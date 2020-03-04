@@ -193,7 +193,7 @@ void run_sec_chat_client(){
 
 void run_sec_chat_server(char* name_client){
     int fd_server                     = create_tcp_socketFD();
-    struct sockaddr_in address_server = create_address(my_port);
+    struct sockaddr_in address_server = create_address(0);
     int address_len = sizeof(address_server);
     int opts = 1;
     if(setsockopt(fd_server, SOL_SOCKET, SO_REUSEADDR, (char *)&opts, sizeof(opts)) < 0 ){
@@ -203,6 +203,12 @@ void run_sec_chat_server(char* name_client){
     bind_address_to_socket(&fd_server, &address_server);
     listen_to_connection(&fd_server, 10);
     
+    struct sockaddr_in temp;
+    int address_lenn = sizeof(temp);
+    getsockname(fd_server, (struct sockaddr *) &temp, (socklen_t *) &address_lenn);
+    my_port = ntohs(temp.sin_port);
+    print("\nmy port is : "); print(itoa(my_port, 10)); print("\n");
+
     Request request;
     request.state = _C_SEC_READY;
     strcpy(request.info, name_client);
@@ -210,7 +216,7 @@ void run_sec_chat_server(char* name_client){
     strcat(request.info, itoa(my_port, 10));
     send_request(&request, fd_master_server);
 
-    print("\n Entered to secret chat and waiting for client named : ");
+    print("\nEntered to secret chat and waiting for client named : ");
     print(name_client); print("\n");
 
     int fd_client;
@@ -660,11 +666,10 @@ void run_client(int server_port){
 
 
 int main(int argc, char* argv[]){
-    if(argc != 3){
+    if(argc != 2){
         print(" :/ port please ! \n");
         exit(-1);
     }
-    my_port = atoi(argv[2]);
     run_client(atoi(argv[1]));
     return 0;
 }
